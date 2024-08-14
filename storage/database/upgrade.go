@@ -74,6 +74,13 @@ func upgrade(tx *sql.Tx) error {
 			return err
 		}
 	}
+	if version.LessThan(schemaVersion{common.Version{0, 7, 0}, 2}) {
+		log.Infof(2, "making tag name unique")
+
+		if err := makeTagNameUnique(tx); err != nil {
+			return err
+		}
+	}
 
 	log.Infof(2, "updating schema version")
 	if err := updateSchemaVersion(tx, latestSchemaVersion); err != nil {
@@ -171,6 +178,37 @@ func recreateVersionTable(tx *sql.Tx) error {
 	}
 
 	if err := insertSchemaVersion(tx, latestSchemaVersion); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func makeTagNameUnique(tx *sql.Tx) error {
+	if _, err := tx.Exec(`
+ALTER TABLE tag
+RENAME TO tag_old`); err != nil {
+		return err
+	}
+
+	if err := createTagTable(tx); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`
+INSERT INTO tag
+SELECT id, name
+FROM tag_old`); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`
+DROP INDEX IF EXISTS idx_tag_name`); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`
+DROP TABLE tag_old`); err != nil {
 		return err
 	}
 

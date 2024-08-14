@@ -23,7 +23,7 @@ import (
 
 // unexported
 
-var latestSchemaVersion = schemaVersion{common.Version{0, 7, 0}, 1}
+var latestSchemaVersion = schemaVersion{common.Version{0, 7, 0}, 2}
 
 func currentSchemaVersion(tx *sql.Tx) schemaVersion {
 	sql := `
@@ -132,16 +132,9 @@ func createTagTable(tx *sql.Tx) error {
 	sql := `
 CREATE TABLE IF NOT EXISTS tag (
     id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL
+    name TEXT NOT NULL,
+	CONSTRAINT con_tag_name UNIQUE (name)
 )`
-
-	if _, err := tx.Exec(sql); err != nil {
-		return err
-	}
-
-	sql = `
-CREATE INDEX IF NOT EXISTS idx_tag_name
-ON tag(name)`
 
 	if _, err := tx.Exec(sql); err != nil {
 		return err
