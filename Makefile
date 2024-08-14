@@ -1,8 +1,9 @@
 # installation paths
-INSTALL_DIR=$(DESTDIR)/usr/bin
-MOUNT_INSTALL_DIR=$(DESTDIR)/usr/sbin
-MAN_INSTALL_DIR=$(DESTDIR)/usr/share/man/man1
-ZSH_COMP_INSTALL_DIR=$(DESTDIR)/usr/share/zsh/site-functions
+USRDIR=$(if $(DESTDIR),$(DESTDIR),/usr)
+INSTALL_DIR=$(USRDIR)/bin
+MOUNT_INSTALL_DIR=$(USRDIR)/sbin
+MAN_INSTALL_DIR=$(USRDIR)/share/man/man1
+ZSH_COMP_INSTALL_DIR=$(USRDIR)/share/zsh/site-functions
 BASH_COMP_INSTALL_DIR=$(DESTDIR)/etc/bash_completion.d
 
 # other vars
