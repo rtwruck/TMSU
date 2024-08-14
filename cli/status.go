@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"github.com/oniony/TMSU/common/log"
 	_path "github.com/oniony/TMSU/common/path"
+	"github.com/oniony/TMSU/common/fingerprint"
 	"github.com/oniony/TMSU/entities"
 	"github.com/oniony/TMSU/storage"
 	"os"
@@ -49,6 +50,7 @@ Note: The 'repair' subcommand can be used to fix problems caused by files that h
 		"$ tmsu status .",
 		"$ tmsu status --directory *"},
 	Options: Options{Option{"--directory", "-d", "do not examine directory contents (non-recursive)", false, ""},
+		Option{"--fingerprint", "-f", "list file fingerprint instead of tagging status", false, ""},
 		Option{"--no-dereference", "-P", "do not follow symbolic links", false, ""}},
 	Exec: statusExec,
 }
@@ -81,8 +83,9 @@ func (report *StatusReport) ContainsRow(path string) bool {
 }
 
 type Row struct {
-	Path   string
-	Status Status
+	Path        string
+	Status      Status
+	Fingerprint fingerprint.Fingerprint
 }
 
 func NewReport() *StatusReport {
@@ -94,6 +97,7 @@ func NewReport() *StatusReport {
 func statusExec(options Options, args []string, databasePath string) (error, warnings) {
 	dirOnly := options.HasOption("--directory")
 	followSymlinks := !options.HasOption("--no-dereference")
+	showFingerprints := !options.HasOption("--fingerprint")
 
 	store, err := openDatabase(databasePath)
 	if err != nil {
@@ -121,7 +125,7 @@ func statusExec(options Options, args []string, databasePath string) (error, war
 		}
 	}
 
-	printReport(report)
+	printReport(report, showFingerprints)
 
 	return nil, nil
 }
@@ -243,12 +247,12 @@ func statusCheckFile(absPath string, file *entities.File, report *StatusReport) 
 		case os.IsNotExist(err):
 			log.Infof(2, "%v: file is missing.", absPath)
 
-			report.AddRow(Row{absPath, MISSING})
+			report.AddRow(Row{absPath, MISSING, ""})
 			return nil
 		case os.IsPermission(err):
 			log.Warnf("%v: permission denied.", absPath)
 		case strings.Contains(err.Error(), "not a directory"): //TODO improve
-			report.AddRow(Row{file.Path(), MISSING})
+			report.AddRow(Row{file.Path(), MISSING, ""})
 			return nil
 		default:
 			return fmt.Errorf("%v: could not stat: %v", file.Path(), err)
@@ -257,11 +261,11 @@ func statusCheckFile(absPath string, file *entities.File, report *StatusReport) 
 		if stat.Size() != file.Size || !stat.ModTime().UTC().Equal(file.ModTime) {
 			log.Infof(2, "%v: file is modified.", absPath)
 
-			report.AddRow(Row{absPath, MODIFIED})
+			report.AddRow(Row{absPath, MODIFIED, file.Fingerprint})
 		} else {
 			log.Infof(2, "%v: file is unchanged.", absPath)
 
-			report.AddRow(Row{absPath, TAGGED})
+			report.AddRow(Row{absPath, TAGGED, file.Fingerprint})
 		}
 	}
 
@@ -277,7 +281,7 @@ func findNewFiles(searchPath string, report *StatusReport, dirOnly, followSymlin
 	}
 
 	if !report.ContainsRow(absPath) {
-		report.AddRow(Row{absPath, UNTAGGED})
+		report.AddRow(Row{absPath, UNTAGGED, ""})
 	}
 
 	stat, err := os.Stat(absPath)
@@ -319,22 +323,26 @@ func findNewFiles(searchPath string, report *StatusReport, dirOnly, followSymlin
 	return nil
 }
 
-func printReport(report *StatusReport) {
-	printRows(report.Rows, TAGGED)
-	printRows(report.Rows, MODIFIED)
-	printRows(report.Rows, MISSING)
-	printRows(report.Rows, UNTAGGED)
+func printReport(report *StatusReport, showFingerprints bool) {
+	printRows(report.Rows, TAGGED, showFingerprints)
+	printRows(report.Rows, MODIFIED, showFingerprints)
+	printRows(report.Rows, MISSING, showFingerprints)
+	printRows(report.Rows, UNTAGGED, showFingerprints)
 }
 
-func printRows(rows []Row, status Status) {
+func printRows(rows []Row, status Status, showFingerprints bool) {
 	for _, row := range rows {
 		if row.Status == status {
-			printRow(row)
+			printRow(row, showFingerprints)
 		}
 	}
 }
 
-func printRow(row Row) {
+func printRow(row Row, showFingerprints bool) {
 	relPath := _path.Rel(row.Path)
-	fmt.Printf("%v %v\n", string(row.Status), relPath)
+	if showFingerprints {
+		fmt.Printf("%v  %v\n", string(row.Fingerprint), relPath)
+	} else {
+		fmt.Printf("%v %v\n", string(row.Status), relPath)
+	}
 }
