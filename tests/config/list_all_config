@@ -18,6 +18,7 @@ directoryFingerprintAlgorithm=none
 fileFingerprintAlgorithm=dynamic:SHA256
 reportDuplicates=yes
 symlinkFingerprintAlgorithm=follow
+tagDirectories=yes
 EOF
 if [[ $? -ne 0 ]]; then
     exit 1

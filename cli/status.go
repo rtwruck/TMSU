@@ -107,15 +107,20 @@ func statusExec(options Options, args []string, databasePath string) (error, war
 	}
 	defer tx.Commit()
 
+	settings, err := store.Settings(tx)
+	if err != nil {
+		return err, nil
+	}
+
 	var report *StatusReport
 
 	if len(args) == 0 {
-		report, err = statusDatabase(store, tx, dirOnly, followSymlinks)
+		report, err = statusDatabase(store, tx, dirOnly, followSymlinks, settings.TagDirectories())
 		if err != nil {
 			return err, nil
 		}
 	} else {
-		report, err = statusPaths(store, tx, args, dirOnly, followSymlinks)
+		report, err = statusPaths(store, tx, args, dirOnly, followSymlinks, settings.TagDirectories())
 		if err != nil {
 			return err, nil
 		}
@@ -126,7 +131,7 @@ func statusExec(options Options, args []string, databasePath string) (error, war
 	return nil, nil
 }
 
-func statusDatabase(store *storage.Storage, tx *storage.Tx, dirOnly, followSymlinks bool) (*StatusReport, error) {
+func statusDatabase(store *storage.Storage, tx *storage.Tx, dirOnly, followSymlinks, tagDirectories bool) (*StatusReport, error) {
 	report := NewReport()
 
 	log.Info(2, "retrieving all files from database.")
@@ -152,7 +157,7 @@ func statusDatabase(store *storage.Storage, tx *storage.Tx, dirOnly, followSymli
 	}
 
 	for _, path := range topLevelPaths {
-		if err = findNewFiles(path, report, dirOnly, followSymlinks); err != nil {
+		if err = findNewFiles(path, report, dirOnly, followSymlinks, tagDirectories); err != nil {
 			return nil, err
 		}
 	}
@@ -160,7 +165,7 @@ func statusDatabase(store *storage.Storage, tx *storage.Tx, dirOnly, followSymli
 	return report, nil
 }
 
-func statusPaths(store *storage.Storage, tx *storage.Tx, paths []string, dirOnly, followSymlinks bool) (*StatusReport, error) {
+func statusPaths(store *storage.Storage, tx *storage.Tx, paths []string, dirOnly, followSymlinks, tagDirectories bool) (*StatusReport, error) {
 	report := NewReport()
 
 	for _, path := range paths {
@@ -215,7 +220,7 @@ func statusPaths(store *storage.Storage, tx *storage.Tx, paths []string, dirOnly
 			}
 		}
 
-		err = findNewFiles(absPath, report, dirOnly, followSymlinks)
+		err = findNewFiles(absPath, report, dirOnly, followSymlinks, tagDirectories)
 		if err != nil {
 			return nil, err
 		}
@@ -268,16 +273,12 @@ func statusCheckFile(absPath string, file *entities.File, report *StatusReport) 
 	return nil
 }
 
-func findNewFiles(searchPath string, report *StatusReport, dirOnly, followSymlinks bool) error {
+func findNewFiles(searchPath string, report *StatusReport, dirOnly, followSymlinks, tagDirectories bool) error {
 	log.Infof(2, "%v: finding new files.", searchPath)
 
 	absPath, err := filepath.Abs(searchPath)
 	if err != nil {
 		return fmt.Errorf("%v: could not get absolute path: %v", searchPath, err)
-	}
-
-	if !report.ContainsRow(absPath) {
-		report.AddRow(Row{absPath, UNTAGGED})
 	}
 
 	stat, err := os.Stat(absPath)
@@ -290,6 +291,12 @@ func findNewFiles(searchPath string, report *StatusReport, dirOnly, followSymlin
 			return nil
 		default:
 			return fmt.Errorf("%v: could not stat: %v", searchPath, err)
+		}
+	}
+
+	if !report.ContainsRow(absPath) {
+		if tagDirectories || !stat.IsDir() {
+			report.AddRow(Row{absPath, UNTAGGED})
 		}
 	}
 
@@ -308,7 +315,7 @@ func findNewFiles(searchPath string, report *StatusReport, dirOnly, followSymlin
 
 		for _, dirName := range dirNames {
 			dirPath := filepath.Join(absPath, dirName)
-			err = findNewFiles(dirPath, report, dirOnly, followSymlinks)
+			err = findNewFiles(dirPath, report, dirOnly, followSymlinks, tagDirectories)
 			if err != nil {
 				return err
 			}

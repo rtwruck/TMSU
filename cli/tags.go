@@ -131,6 +131,11 @@ func listAllTags(store *storage.Storage, tx *storage.Tx, showCount, onePerLine b
 func listTagsForPaths(store *storage.Storage, tx *storage.Tx, paths []string, showCount, onePerLine, explicitOnly, colour, followSymlinks bool, printPathWhen string) (error, warnings) {
 	warnings := make(warnings, 0, 10)
 
+	settings, err := store.Settings(tx)
+	if err != nil {
+		return err, warnings
+	}
+
 	printPath := printPathWhen != "never" && (printPathWhen == "always" || len(paths) > 1 || !stdoutIsCharDevice())
 
 	for index, path := range paths {
@@ -173,7 +178,7 @@ func listTagsForPaths(store *storage.Storage, tx *storage.Tx, paths []string, sh
 				return err, warnings
 			}
 		} else {
-			_, err := os.Stat(absPath)
+			stat, err := os.Stat(absPath)
 			if err != nil {
 				switch {
 				case os.IsPermission(err):
@@ -185,6 +190,9 @@ func listTagsForPaths(store *storage.Storage, tx *storage.Tx, paths []string, sh
 				default:
 					return fmt.Errorf("%v: could not stat file: %v", absPath, err), warnings
 				}
+			}
+			if !settings.TagDirectories() && stat.IsDir() {
+				continue
 			}
 		}
 

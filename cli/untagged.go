@@ -67,15 +67,20 @@ func untaggedExec(options Options, args []string, databasePath string) (error, w
 	}
 	defer tx.Commit()
 
+	settings, err := store.Settings(tx)
+	if err != nil {
+		return err, nil
+	}
+
 	if count {
-		count, err := findUntaggedCount(store, tx, paths, recursive, followSymlinks)
+		count, err := findUntaggedCount(store, tx, paths, recursive, followSymlinks, settings.TagDirectories())
 		if err != nil {
 			return err, nil
 		}
 
 		fmt.Println(count)
 	} else {
-		if err := findUntagged(store, tx, paths, recursive, followSymlinks); err != nil {
+		if err := findUntagged(store, tx, paths, recursive, followSymlinks, settings.TagDirectories()); err != nil {
 			return err, nil
 		}
 	}
@@ -83,28 +88,28 @@ func untaggedExec(options Options, args []string, databasePath string) (error, w
 	return nil, nil
 }
 
-func findUntagged(store *storage.Storage, tx *storage.Tx, paths []string, recursive, followSymlinks bool) error {
+func findUntagged(store *storage.Storage, tx *storage.Tx, paths []string, recursive, followSymlinks, tagDirectories bool) error {
 	var action = func(absPath string) {
 		relPath := _path.Rel(absPath)
 		fmt.Println(relPath)
 	}
 
-	return findUntaggedFunc(store, tx, paths, recursive, followSymlinks, action)
+	return findUntaggedFunc(store, tx, paths, recursive, followSymlinks, tagDirectories, action)
 }
 
-func findUntaggedCount(store *storage.Storage, tx *storage.Tx, paths []string, recursive, followSymlinks bool) (uint, error) {
+func findUntaggedCount(store *storage.Storage, tx *storage.Tx, paths []string, recursive, followSymlinks, tagDirectories bool) (uint, error) {
 	var count uint
 
 	var action = func(absPath string) {
 		count++
 	}
 
-	err := findUntaggedFunc(store, tx, paths, recursive, followSymlinks, action)
+	err := findUntaggedFunc(store, tx, paths, recursive, followSymlinks, tagDirectories, action)
 
 	return count, err
 }
 
-func findUntaggedFunc(store *storage.Storage, tx *storage.Tx, paths []string, recursive, followSymlinks bool, action func(absPath string)) error {
+func findUntaggedFunc(store *storage.Storage, tx *storage.Tx, paths []string, recursive, followSymlinks, tagDirectories bool, action func(absPath string)) error {
 	for _, path := range paths {
 		absPath, err := filepath.Abs(path)
 		if err != nil {
@@ -126,7 +131,9 @@ func findUntaggedFunc(store *storage.Storage, tx *storage.Tx, paths []string, re
 			return fmt.Errorf("%v: could not retrieve file: %v", path, err)
 		}
 		if file == nil {
-			action(absPath)
+			if isRelevantForTagging(absPath, tagDirectories) {
+				action(absPath)
+			}
 		}
 
 		if recursive {
@@ -135,11 +142,34 @@ func findUntaggedFunc(store *storage.Storage, tx *storage.Tx, paths []string, re
 				return err
 			}
 
-			findUntaggedFunc(store, tx, entries, true, followSymlinks, action)
+			findUntaggedFunc(store, tx, entries, true, followSymlinks, tagDirectories, action)
 		}
 	}
 
 	return nil
+}
+
+func isRelevantForTagging(path string, tagDirectories bool) bool {
+	stat, err := os.Stat(path)
+	if err != nil {
+		switch {
+		case os.IsNotExist(err):
+			//TODO return as warning
+			log.Warnf("%v: does not exist", path)
+			return true
+		case os.IsPermission(err):
+			//TODO return as warning
+			log.Warnf("%v: permission denied", path)
+			return true
+		default:
+			log.Warnf("%v: could not stat: %v", path, err)
+			return true
+		}
+	}
+	if tagDirectories {
+		return true
+	}
+	return !stat.IsDir()
 }
 
 func directoryEntries(path string) ([]string, error) {
