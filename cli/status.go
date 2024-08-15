@@ -97,7 +97,7 @@ func NewReport() *StatusReport {
 func statusExec(options Options, args []string, databasePath string) (error, warnings) {
 	dirOnly := options.HasOption("--directory")
 	followSymlinks := !options.HasOption("--no-dereference")
-	showFingerprints := !options.HasOption("--fingerprint")
+	showFingerprints := options.HasOption("--fingerprint")
 
 	store, err := openDatabase(databasePath)
 	if err != nil {
