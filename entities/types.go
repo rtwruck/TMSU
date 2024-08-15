@@ -29,3 +29,14 @@ func (pair TagIdValueIdPair) String() string {
 }
 
 type TagIdValueIdPairs []TagIdValueIdPair
+
+type TagValuePair struct {
+	Tag   Tag
+	Value Value
+}
+
+func (pair TagValuePair) String() string {
+	return fmt.Sprintf("%v=%v", pair.Tag.Name, pair.Value.Name)
+}
+
+type TagValuePairs []*TagValuePair
