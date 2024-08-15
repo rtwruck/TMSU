@@ -1,0 +1,257 @@
+#!/usr/bin/env bash
+
+# setup
+
+echo 1 >/tmp/tmsu/file1
+echo 2 >/tmp/tmsu/file2
+echo 3 >/tmp/tmsu/file3
+echo 4 >/tmp/tmsu/file4
+echo 5 >/tmp/tmsu/file5
+echo 6 >/tmp/tmsu/file6
+tmsu tag /tmp/tmsu/file1 A    >|/tmp/tmsu/stdout 2>|/tmp/tmsu/stderr
+tmsu tag /tmp/tmsu/file2 B    >>/tmp/tmsu/stdout 2>>/tmp/tmsu/stderr
+tmsu tag /tmp/tmsu/file3 C    >>/tmp/tmsu/stdout 2>>/tmp/tmsu/stderr
+tmsu tag /tmp/tmsu/file4 D    >>/tmp/tmsu/stdout 2>>/tmp/tmsu/stderr
+tmsu tag /tmp/tmsu/file5 E    >>/tmp/tmsu/stdout 2>>/tmp/tmsu/stderr
+tmsu tag /tmp/tmsu/file6 D    >>/tmp/tmsu/stdout 2>>/tmp/tmsu/stderr
+tmsu tag /tmp/tmsu/file6 E=1  >>/tmp/tmsu/stdout 2>>/tmp/tmsu/stderr
+tmsu tag /tmp/tmsu/file6 E=2  >>/tmp/tmsu/stdout 2>>/tmp/tmsu/stderr
+tmsu imply A B
+tmsu imply B C
+
+# test
+
+mkdir -p /tmp/tmsu/vfs
+# tmsu vfs --database=/tmp/tmsu/.tmsu/db /tmp/tmsu/vfs --options=
+tmsu mount /tmp/tmsu/vfs
+find /tmp/tmsu/vfs -maxdepth 6  >>/tmp/tmsu/stdout 2>>/tmp/tmsu/stderr
+tmsu unmount /tmp/tmsu/vfs
+#umount /tmp/tmsu/vfs
+
+# verify
+
+diff /tmp/tmsu/stderr - <<EOF
+tmsu: new tag 'A'
+tmsu: new tag 'B'
+tmsu: new tag 'C'
+tmsu: new tag 'D'
+tmsu: new tag 'E'
+tmsu: new value '1'
+tmsu: new value '2'
+EOF
+if [[ $? -ne 0 ]]; then
+    exit 1
+fi
+
+diff /tmp/tmsu/stdout - <<EOF
+/tmp/tmsu/vfs
+/tmp/tmsu/vfs/.database
+/tmp/tmsu/vfs/tags
+/tmp/tmsu/vfs/tags/A
+/tmp/tmsu/vfs/tags/A/files
+/tmp/tmsu/vfs/tags/A/files/file1.1
+/tmp/tmsu/vfs/tags/B
+/tmp/tmsu/vfs/tags/B/A
+/tmp/tmsu/vfs/tags/B/A/files
+/tmp/tmsu/vfs/tags/B/A/files/file1.1
+/tmp/tmsu/vfs/tags/B/files
+/tmp/tmsu/vfs/tags/B/files/file1.1
+/tmp/tmsu/vfs/tags/B/files/file2.2
+/tmp/tmsu/vfs/tags/C
+/tmp/tmsu/vfs/tags/C/A
+/tmp/tmsu/vfs/tags/C/A/files
+/tmp/tmsu/vfs/tags/C/A/files/file1.1
+/tmp/tmsu/vfs/tags/C/B
+/tmp/tmsu/vfs/tags/C/B/A
+/tmp/tmsu/vfs/tags/C/B/A/files
+/tmp/tmsu/vfs/tags/C/B/A/files/file1.1
+/tmp/tmsu/vfs/tags/C/B/files
+/tmp/tmsu/vfs/tags/C/B/files/file1.1
+/tmp/tmsu/vfs/tags/C/B/files/file2.2
+/tmp/tmsu/vfs/tags/C/files
+/tmp/tmsu/vfs/tags/C/files/file1.1
+/tmp/tmsu/vfs/tags/C/files/file2.2
+/tmp/tmsu/vfs/tags/C/files/file3.3
+/tmp/tmsu/vfs/tags/D
+/tmp/tmsu/vfs/tags/D/E
+/tmp/tmsu/vfs/tags/D/E/E
+/tmp/tmsu/vfs/tags/D/E/E/E
+/tmp/tmsu/vfs/tags/D/E/E/E/E
+/tmp/tmsu/vfs/tags/D/E/E/E/=1
+/tmp/tmsu/vfs/tags/D/E/E/E/=2
+/tmp/tmsu/vfs/tags/D/E/E/E/files
+/tmp/tmsu/vfs/tags/D/E/E/=1
+/tmp/tmsu/vfs/tags/D/E/E/=1/E
+/tmp/tmsu/vfs/tags/D/E/E/=1/files
+/tmp/tmsu/vfs/tags/D/E/E/=2
+/tmp/tmsu/vfs/tags/D/E/E/=2/E
+/tmp/tmsu/vfs/tags/D/E/E/=2/files
+/tmp/tmsu/vfs/tags/D/E/E/files
+/tmp/tmsu/vfs/tags/D/E/E/files/file6.6
+/tmp/tmsu/vfs/tags/D/E/=1
+/tmp/tmsu/vfs/tags/D/E/=1/E
+/tmp/tmsu/vfs/tags/D/E/=1/E/E
+/tmp/tmsu/vfs/tags/D/E/=1/E/=1
+/tmp/tmsu/vfs/tags/D/E/=1/E/=2
+/tmp/tmsu/vfs/tags/D/E/=1/E/files
+/tmp/tmsu/vfs/tags/D/E/=1/files
+/tmp/tmsu/vfs/tags/D/E/=1/files/file6.6
+/tmp/tmsu/vfs/tags/D/E/=2
+/tmp/tmsu/vfs/tags/D/E/=2/E
+/tmp/tmsu/vfs/tags/D/E/=2/E/E
+/tmp/tmsu/vfs/tags/D/E/=2/E/=1
+/tmp/tmsu/vfs/tags/D/E/=2/E/=2
+/tmp/tmsu/vfs/tags/D/E/=2/E/files
+/tmp/tmsu/vfs/tags/D/E/=2/files
+/tmp/tmsu/vfs/tags/D/E/=2/files/file6.6
+/tmp/tmsu/vfs/tags/D/E/files
+/tmp/tmsu/vfs/tags/D/E/files/file6.6
+/tmp/tmsu/vfs/tags/D/files
+/tmp/tmsu/vfs/tags/D/files/file4.4
+/tmp/tmsu/vfs/tags/D/files/file6.6
+/tmp/tmsu/vfs/tags/E
+/tmp/tmsu/vfs/tags/E/D
+/tmp/tmsu/vfs/tags/E/D/E
+/tmp/tmsu/vfs/tags/E/D/E/E
+/tmp/tmsu/vfs/tags/E/D/E/E/E
+/tmp/tmsu/vfs/tags/E/D/E/E/=1
+/tmp/tmsu/vfs/tags/E/D/E/E/=2
+/tmp/tmsu/vfs/tags/E/D/E/E/files
+/tmp/tmsu/vfs/tags/E/D/E/=1
+/tmp/tmsu/vfs/tags/E/D/E/=1/E
+/tmp/tmsu/vfs/tags/E/D/E/=1/files
+/tmp/tmsu/vfs/tags/E/D/E/=2
+/tmp/tmsu/vfs/tags/E/D/E/=2/E
+/tmp/tmsu/vfs/tags/E/D/E/=2/files
+/tmp/tmsu/vfs/tags/E/D/E/files
+/tmp/tmsu/vfs/tags/E/D/E/files/file6.6
+/tmp/tmsu/vfs/tags/E/D/files
+/tmp/tmsu/vfs/tags/E/D/files/file6.6
+/tmp/tmsu/vfs/tags/E/E
+/tmp/tmsu/vfs/tags/E/E/D
+/tmp/tmsu/vfs/tags/E/E/D/E
+/tmp/tmsu/vfs/tags/E/E/D/E/E
+/tmp/tmsu/vfs/tags/E/E/D/E/=1
+/tmp/tmsu/vfs/tags/E/E/D/E/=2
+/tmp/tmsu/vfs/tags/E/E/D/E/files
+/tmp/tmsu/vfs/tags/E/E/D/files
+/tmp/tmsu/vfs/tags/E/E/D/files/file6.6
+/tmp/tmsu/vfs/tags/E/E/E
+/tmp/tmsu/vfs/tags/E/E/E/D
+/tmp/tmsu/vfs/tags/E/E/E/D/E
+/tmp/tmsu/vfs/tags/E/E/E/D/files
+/tmp/tmsu/vfs/tags/E/E/E/E
+/tmp/tmsu/vfs/tags/E/E/E/E/D
+/tmp/tmsu/vfs/tags/E/E/E/E/E
+/tmp/tmsu/vfs/tags/E/E/E/E/=1
+/tmp/tmsu/vfs/tags/E/E/E/E/=2
+/tmp/tmsu/vfs/tags/E/E/E/E/files
+/tmp/tmsu/vfs/tags/E/E/E/=1
+/tmp/tmsu/vfs/tags/E/E/E/=1/D
+/tmp/tmsu/vfs/tags/E/E/E/=1/E
+/tmp/tmsu/vfs/tags/E/E/E/=1/files
+/tmp/tmsu/vfs/tags/E/E/E/=2
+/tmp/tmsu/vfs/tags/E/E/E/=2/D
+/tmp/tmsu/vfs/tags/E/E/E/=2/E
+/tmp/tmsu/vfs/tags/E/E/E/=2/files
+/tmp/tmsu/vfs/tags/E/E/E/files
+/tmp/tmsu/vfs/tags/E/E/E/files/file5.5
+/tmp/tmsu/vfs/tags/E/E/E/files/file6.6
+/tmp/tmsu/vfs/tags/E/E/=1
+/tmp/tmsu/vfs/tags/E/E/=1/D
+/tmp/tmsu/vfs/tags/E/E/=1/D/E
+/tmp/tmsu/vfs/tags/E/E/=1/D/files
+/tmp/tmsu/vfs/tags/E/E/=1/E
+/tmp/tmsu/vfs/tags/E/E/=1/E/D
+/tmp/tmsu/vfs/tags/E/E/=1/E/E
+/tmp/tmsu/vfs/tags/E/E/=1/E/=1
+/tmp/tmsu/vfs/tags/E/E/=1/E/=2
+/tmp/tmsu/vfs/tags/E/E/=1/E/files
+/tmp/tmsu/vfs/tags/E/E/=1/files
+/tmp/tmsu/vfs/tags/E/E/=1/files/file6.6
+/tmp/tmsu/vfs/tags/E/E/=2
+/tmp/tmsu/vfs/tags/E/E/=2/D
+/tmp/tmsu/vfs/tags/E/E/=2/D/E
+/tmp/tmsu/vfs/tags/E/E/=2/D/files
+/tmp/tmsu/vfs/tags/E/E/=2/E
+/tmp/tmsu/vfs/tags/E/E/=2/E/D
+/tmp/tmsu/vfs/tags/E/E/=2/E/E
+/tmp/tmsu/vfs/tags/E/E/=2/E/=1
+/tmp/tmsu/vfs/tags/E/E/=2/E/=2
+/tmp/tmsu/vfs/tags/E/E/=2/E/files
+/tmp/tmsu/vfs/tags/E/E/=2/files
+/tmp/tmsu/vfs/tags/E/E/=2/files/file6.6
+/tmp/tmsu/vfs/tags/E/E/files
+/tmp/tmsu/vfs/tags/E/E/files/file5.5
+/tmp/tmsu/vfs/tags/E/E/files/file6.6
+/tmp/tmsu/vfs/tags/E/=1
+/tmp/tmsu/vfs/tags/E/=1/D
+/tmp/tmsu/vfs/tags/E/=1/D/E
+/tmp/tmsu/vfs/tags/E/=1/D/E/E
+/tmp/tmsu/vfs/tags/E/=1/D/E/=1
+/tmp/tmsu/vfs/tags/E/=1/D/E/=2
+/tmp/tmsu/vfs/tags/E/=1/D/E/files
+/tmp/tmsu/vfs/tags/E/=1/D/files
+/tmp/tmsu/vfs/tags/E/=1/D/files/file6.6
+/tmp/tmsu/vfs/tags/E/=1/E
+/tmp/tmsu/vfs/tags/E/=1/E/D
+/tmp/tmsu/vfs/tags/E/=1/E/D/E
+/tmp/tmsu/vfs/tags/E/=1/E/D/files
+/tmp/tmsu/vfs/tags/E/=1/E/E
+/tmp/tmsu/vfs/tags/E/=1/E/E/D
+/tmp/tmsu/vfs/tags/E/=1/E/E/E
+/tmp/tmsu/vfs/tags/E/=1/E/E/=1
+/tmp/tmsu/vfs/tags/E/=1/E/E/=2
+/tmp/tmsu/vfs/tags/E/=1/E/E/files
+/tmp/tmsu/vfs/tags/E/=1/E/=1
+/tmp/tmsu/vfs/tags/E/=1/E/=1/D
+/tmp/tmsu/vfs/tags/E/=1/E/=1/E
+/tmp/tmsu/vfs/tags/E/=1/E/=1/files
+/tmp/tmsu/vfs/tags/E/=1/E/=2
+/tmp/tmsu/vfs/tags/E/=1/E/=2/D
+/tmp/tmsu/vfs/tags/E/=1/E/=2/E
+/tmp/tmsu/vfs/tags/E/=1/E/=2/files
+/tmp/tmsu/vfs/tags/E/=1/E/files
+/tmp/tmsu/vfs/tags/E/=1/E/files/file6.6
+/tmp/tmsu/vfs/tags/E/=1/files
+/tmp/tmsu/vfs/tags/E/=1/files/file6.6
+/tmp/tmsu/vfs/tags/E/=2
+/tmp/tmsu/vfs/tags/E/=2/D
+/tmp/tmsu/vfs/tags/E/=2/D/E
+/tmp/tmsu/vfs/tags/E/=2/D/E/E
+/tmp/tmsu/vfs/tags/E/=2/D/E/=1
+/tmp/tmsu/vfs/tags/E/=2/D/E/=2
+/tmp/tmsu/vfs/tags/E/=2/D/E/files
+/tmp/tmsu/vfs/tags/E/=2/D/files
+/tmp/tmsu/vfs/tags/E/=2/D/files/file6.6
+/tmp/tmsu/vfs/tags/E/=2/E
+/tmp/tmsu/vfs/tags/E/=2/E/D
+/tmp/tmsu/vfs/tags/E/=2/E/D/E
+/tmp/tmsu/vfs/tags/E/=2/E/D/files
+/tmp/tmsu/vfs/tags/E/=2/E/E
+/tmp/tmsu/vfs/tags/E/=2/E/E/D
+/tmp/tmsu/vfs/tags/E/=2/E/E/E
+/tmp/tmsu/vfs/tags/E/=2/E/E/=1
+/tmp/tmsu/vfs/tags/E/=2/E/E/=2
+/tmp/tmsu/vfs/tags/E/=2/E/E/files
+/tmp/tmsu/vfs/tags/E/=2/E/=1
+/tmp/tmsu/vfs/tags/E/=2/E/=1/D
+/tmp/tmsu/vfs/tags/E/=2/E/=1/E
+/tmp/tmsu/vfs/tags/E/=2/E/=1/files
+/tmp/tmsu/vfs/tags/E/=2/E/=2
+/tmp/tmsu/vfs/tags/E/=2/E/=2/D
+/tmp/tmsu/vfs/tags/E/=2/E/=2/E
+/tmp/tmsu/vfs/tags/E/=2/E/=2/files
+/tmp/tmsu/vfs/tags/E/=2/E/files
+/tmp/tmsu/vfs/tags/E/=2/E/files/file6.6
+/tmp/tmsu/vfs/tags/E/=2/files
+/tmp/tmsu/vfs/tags/E/=2/files/file6.6
+/tmp/tmsu/vfs/tags/E/files
+/tmp/tmsu/vfs/tags/E/files/file5.5
+/tmp/tmsu/vfs/tags/E/files/file6.6
+/tmp/tmsu/vfs/queries
+/tmp/tmsu/vfs/queries/README.md
+EOF
+if [[ $? -ne 0 ]]; then
+    exit 1
+fi

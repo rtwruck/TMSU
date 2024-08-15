@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+
+# setup
+
+echo 1 >/tmp/tmsu/file1
+echo 2 >/tmp/tmsu/file2
+echo 3 >/tmp/tmsu/file3
+echo 4 >/tmp/tmsu/file4
+echo 5 >/tmp/tmsu/file5
+echo 6 >/tmp/tmsu/file6
+tmsu tag /tmp/tmsu/file1 A    >|/tmp/tmsu/stdout 2>|/tmp/tmsu/stderr
+tmsu tag /tmp/tmsu/file2 B    >>/tmp/tmsu/stdout 2>>/tmp/tmsu/stderr
+tmsu tag /tmp/tmsu/file3 C    >>/tmp/tmsu/stdout 2>>/tmp/tmsu/stderr
+tmsu tag /tmp/tmsu/file4 D    >>/tmp/tmsu/stdout 2>>/tmp/tmsu/stderr
+tmsu tag /tmp/tmsu/file5 E    >>/tmp/tmsu/stdout 2>>/tmp/tmsu/stderr
+tmsu tag /tmp/tmsu/file6 D    >>/tmp/tmsu/stdout 2>>/tmp/tmsu/stderr
+tmsu tag /tmp/tmsu/file6 E=1  >>/tmp/tmsu/stdout 2>>/tmp/tmsu/stderr
+tmsu tag /tmp/tmsu/file6 E=2  >>/tmp/tmsu/stdout 2>>/tmp/tmsu/stderr
+tmsu imply A B
+tmsu imply B C
+
+# test
+
+mkdir -p /tmp/tmsu/vfs
+# tmsu vfs --database=/tmp/tmsu/.tmsu/db /tmp/tmsu/vfs --options=
+tmsu mount /tmp/tmsu/vfs
+find "/tmp/tmsu/vfs/queries/E=1 or C" -maxdepth 6  >>/tmp/tmsu/stdout 2>>/tmp/tmsu/stderr
+tmsu unmount /tmp/tmsu/vfs
+#umount /tmp/tmsu/vfs
+
+# verify
+
+diff /tmp/tmsu/stderr - <<EOF
+tmsu: new tag 'A'
+tmsu: new tag 'B'
+tmsu: new tag 'C'
+tmsu: new tag 'D'
+tmsu: new tag 'E'
+tmsu: new value '1'
+tmsu: new value '2'
+EOF
+if [[ $? -ne 0 ]]; then
+    exit 1
+fi
+
+diff /tmp/tmsu/stdout - <<EOF
+/tmp/tmsu/vfs/queries/E=1 or C
+/tmp/tmsu/vfs/queries/E=1 or C/file1.1
+/tmp/tmsu/vfs/queries/E=1 or C/file2.2
+/tmp/tmsu/vfs/queries/E=1 or C/file3.3
+/tmp/tmsu/vfs/queries/E=1 or C/file6.6
+EOF
+if [[ $? -ne 0 ]]; then
+    exit 1
+fi
