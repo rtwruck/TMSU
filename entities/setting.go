@@ -58,6 +58,10 @@ func (settings Settings) ReportDuplicates() bool {
 	return settings.BoolValue("reportDuplicates")
 }
 
+func (settings Settings) TagDirectories() bool {
+	return settings.BoolValue("tagDirectories")
+}
+
 func (settings Settings) ContainsName(name string) bool {
 	for _, setting := range settings {
 		if setting.Name == name {

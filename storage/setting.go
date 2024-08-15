@@ -27,7 +27,8 @@ var defaultSettings = entities.Settings{
 	&entities.Setting{"directoryFingerprintAlgorithm", "none"},
 	&entities.Setting{"fileFingerprintAlgorithm", "dynamic:SHA256"},
 	&entities.Setting{"reportDuplicates", "yes"},
-	&entities.Setting{"symlinkFingerprintAlgorithm", "follow"}}
+	&entities.Setting{"symlinkFingerprintAlgorithm", "follow"},
+	&entities.Setting{"tagDirectories", "yes"}}
 
 // The complete set of settings.
 func (storage *Storage) Settings(tx *Tx) (entities.Settings, error) {

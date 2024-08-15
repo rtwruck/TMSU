@@ -204,7 +204,7 @@ func tagPaths(store *storage.Storage, tx *storage.Tx, tagArgs, paths []string, e
 	}
 
 	for _, path := range paths {
-		if err := tagPath(store, tx, path, pairs, explicit, recursive, includeHidden, force, followSymlinks, settings.FileFingerprintAlgorithm(), settings.DirectoryFingerprintAlgorithm(), settings.SymlinkFingerprintAlgorithm(), settings.ReportDuplicates()); err != nil {
+		if err := tagPath(store, tx, path, pairs, explicit, recursive, includeHidden, force, followSymlinks, settings.TagDirectories(), settings.FileFingerprintAlgorithm(), settings.DirectoryFingerprintAlgorithm(), settings.SymlinkFingerprintAlgorithm(), settings.ReportDuplicates()); err != nil {
 			switch {
 			case os.IsPermission(err):
 				warnings = append(warnings, fmt.Sprintf("%v: permission denied", path))
@@ -259,7 +259,7 @@ func tagFrom(store *storage.Storage, tx *storage.Tx, fromPath string, paths []st
 	warnings := make(warnings, 0, 10)
 
 	for _, path := range paths {
-		if err := tagPath(store, tx, path, pairs, explicit, recursive, includeHidden, force, followSymlinks, settings.FileFingerprintAlgorithm(), settings.DirectoryFingerprintAlgorithm(), settings.SymlinkFingerprintAlgorithm(), settings.ReportDuplicates()); err != nil {
+		if err := tagPath(store, tx, path, pairs, explicit, recursive, includeHidden, force, followSymlinks, settings.TagDirectories(), settings.FileFingerprintAlgorithm(), settings.DirectoryFingerprintAlgorithm(), settings.SymlinkFingerprintAlgorithm(), settings.ReportDuplicates()); err != nil {
 			switch {
 			case os.IsPermission(err):
 				warnings = append(warnings, fmt.Sprintf("%v: permission denied", path))
@@ -316,7 +316,7 @@ func tagWhere(store *storage.Storage, tx *storage.Tx, queryText string, explicit
 	return nil, warnings
 }
 
-func tagPath(store *storage.Storage, tx *storage.Tx, path string, pairs []entities.TagIdValueIdPair, explicit, recursive, includeHidden, force, followSymlinks bool, fileFingerprintAlg, dirFingerprintAlg, symlinkFingerprintAlg string, reportDuplicates bool) error {
+func tagPath(store *storage.Storage, tx *storage.Tx, path string, pairs []entities.TagIdValueIdPair, explicit, recursive, includeHidden, force, followSymlinks, tagDirectories bool, fileFingerprintAlg, dirFingerprintAlg, symlinkFingerprintAlg string, reportDuplicates bool) error {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return fmt.Errorf("%v: could not get absolute path: %v", path, err)
@@ -356,53 +356,55 @@ func tagPath(store *storage.Storage, tx *storage.Tx, path string, pairs []entiti
 	if err != nil {
 		return fmt.Errorf("%v: could not retrieve file: %v", path, err)
 	}
-	if file == nil {
-		log.Infof(2, "%v: creating fingerprint", path)
-
-		fp, err := fingerprint.Create(absPath, fileFingerprintAlg, dirFingerprintAlg, symlinkFingerprintAlg)
-		if err != nil {
-			if !force || !(os.IsNotExist(err) || os.IsPermission(err)) {
-				return fmt.Errorf("%v: could not create fingerprint: %v", path, err)
-			}
-		}
-
-		if fp != fingerprint.Empty && reportDuplicates {
-			log.Infof(2, "%v: checking for duplicates", path)
-
-			count, err := store.FileCountByFingerprint(tx, fp)
+	if (tagDirectories || !stat.IsDir()) {
+		if file == nil {
+			log.Infof(2, "%v: creating fingerprint", path)
+	
+			fp, err := fingerprint.Create(absPath, fileFingerprintAlg, dirFingerprintAlg, symlinkFingerprintAlg)
 			if err != nil {
-				return fmt.Errorf("%v: could not identify duplicates: %v", path, err)
+				if !force || !(os.IsNotExist(err) || os.IsPermission(err)) {
+					return fmt.Errorf("%v: could not create fingerprint: %v", path, err)
+				}
 			}
-			if count != 0 {
-				log.Warnf("'%v' is a duplicate", path)
+	
+			if fp != fingerprint.Empty && reportDuplicates {
+				log.Infof(2, "%v: checking for duplicates", path)
+	
+				count, err := store.FileCountByFingerprint(tx, fp)
+				if err != nil {
+					return fmt.Errorf("%v: could not identify duplicates: %v", path, err)
+				}
+				if count != 0 {
+					log.Warnf("'%v' is a duplicate", path)
+				}
+			}
+	
+			log.Infof(2, "%v: adding file", path)
+	
+			file, err = store.AddFile(tx, absPath, fp, stat.ModTime(), int64(stat.Size()), stat.IsDir())
+			if err != nil {
+				return fmt.Errorf("%v: could not add file to database: %v", path, err)
 			}
 		}
-
-		log.Infof(2, "%v: adding file", path)
-
-		file, err = store.AddFile(tx, absPath, fp, stat.ModTime(), int64(stat.Size()), stat.IsDir())
-		if err != nil {
-			return fmt.Errorf("%v: could not add file to database: %v", path, err)
+	
+		if !explicit {
+			pairs, err = removeAlreadyAppliedTagValuePairs(store, tx, pairs, file)
+			if err != nil {
+				return fmt.Errorf("%v: could not remove applied tags: %v", path, err)
+			}
 		}
-	}
-
-	if !explicit {
-		pairs, err = removeAlreadyAppliedTagValuePairs(store, tx, pairs, file)
-		if err != nil {
-			return fmt.Errorf("%v: could not remove applied tags: %v", path, err)
-		}
-	}
-
-	log.Infof(2, "%v: applying tags.", path)
-
-	for _, pair := range pairs {
-		if _, err = store.AddFileTag(tx, file.Id, pair.TagId, pair.ValueId); err != nil {
-			return fmt.Errorf("%v: could not apply tags: %v", path, err)
+	
+		log.Infof(2, "%v: applying tags.", path)
+	
+		for _, pair := range pairs {
+			if _, err = store.AddFileTag(tx, file.Id, pair.TagId, pair.ValueId); err != nil {
+				return fmt.Errorf("%v: could not apply tags: %v", path, err)
+			}
 		}
 	}
 
 	if recursive && stat.IsDir() {
-		if err = tagRecursively(store, tx, absPath, pairs, explicit, includeHidden, force, followSymlinks, fileFingerprintAlg, dirFingerprintAlg, symlinkFingerprintAlg, reportDuplicates); err != nil {
+		if err = tagRecursively(store, tx, absPath, pairs, explicit, includeHidden, force, followSymlinks, tagDirectories, fileFingerprintAlg, dirFingerprintAlg, symlinkFingerprintAlg, reportDuplicates); err != nil {
 			return err
 		}
 	}
@@ -493,7 +495,7 @@ func readStandardInput(store *storage.Storage, tx *storage.Tx, recursive, includ
 	return nil, warnings
 }
 
-func tagRecursively(store *storage.Storage, tx *storage.Tx, path string, pairs []entities.TagIdValueIdPair, explicit, includeHidden, force, followSymlinks bool, fileFingerprintAlg, dirFingerprintAlg, symlinkFingerprintAlg string, reportDuplicates bool) error {
+func tagRecursively(store *storage.Storage, tx *storage.Tx, path string, pairs []entities.TagIdValueIdPair, explicit, includeHidden, force, followSymlinks, tagDirectories bool, fileFingerprintAlg, dirFingerprintAlg, symlinkFingerprintAlg string, reportDuplicates bool) error {
 	osFile, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("%v: could not open path: %v", path, err)
@@ -512,7 +514,7 @@ func tagRecursively(store *storage.Storage, tx *storage.Tx, path string, pairs [
 			continue
 		}
 
-		if err = tagPath(store, tx, childPath, pairs, explicit, true, includeHidden, force, followSymlinks, fileFingerprintAlg, dirFingerprintAlg, symlinkFingerprintAlg, reportDuplicates); err != nil {
+		if err = tagPath(store, tx, childPath, pairs, explicit, true, includeHidden, force, followSymlinks, tagDirectories, fileFingerprintAlg, dirFingerprintAlg, symlinkFingerprintAlg, reportDuplicates); err != nil {
 			return err
 		}
 	}
