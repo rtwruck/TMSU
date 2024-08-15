@@ -17,7 +17,7 @@ echo changed >>/tmp/tmsu/file3
 
 # test
 
-tmsu status /tmp/tmsu/dir             >>/tmp/tmsu/stdout 2>>/tmp/tmsu/stderr
+tmsu status --include-hidden /tmp/tmsu/dir             >>/tmp/tmsu/stdout 2>>/tmp/tmsu/stderr
 
 # verify
 
@@ -30,6 +30,7 @@ fi
 
 diff /tmp/tmsu/stdout - <<EOF
 T /tmp/tmsu/dir
+U /tmp/tmsu/dir/.hidden
 U /tmp/tmsu/dir/file4
 EOF
 if [[ $? -ne 0 ]]; then

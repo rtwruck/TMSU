@@ -35,6 +35,7 @@ Where PATHs are not specified, untagged items under the current working director
 		"$ tmsu untagged /home/fred/drawings"},
 	Options: Options{Option{"--directory", "-d", "do not examine directory contents (non-recursive)", false, ""},
 		Option{"--count", "-c", "list the number of files rather than their names", false, ""},
+		Option{"--include-hidden", "-H", "don't skip hidden files/directories when examining recursively", false, ""},
 		Option{"--no-dereference", "-P", "do not dereference symbolic links", false, ""}},
 	Exec: untaggedExec,
 }
@@ -44,12 +45,13 @@ Where PATHs are not specified, untagged items under the current working director
 func untaggedExec(options Options, args []string, databasePath string) (error, warnings) {
 	recursive := !options.HasOption("--directory")
 	count := options.HasOption("--count")
+	includeHidden := options.HasOption("--include-hidden")
 	followSymlinks := !options.HasOption("--no-dereference")
 
 	paths := args
 	if len(paths) == 0 {
 		var err error
-		paths, err = directoryEntries(".")
+		paths, err = directoryEntries(".", includeHidden)
 		if err != nil {
 			return err, nil
 		}
@@ -68,14 +70,14 @@ func untaggedExec(options Options, args []string, databasePath string) (error, w
 	defer tx.Commit()
 
 	if count {
-		count, err := findUntaggedCount(store, tx, paths, recursive, followSymlinks)
+		count, err := findUntaggedCount(store, tx, paths, recursive, includeHidden, followSymlinks)
 		if err != nil {
 			return err, nil
 		}
 
 		fmt.Println(count)
 	} else {
-		if err := findUntagged(store, tx, paths, recursive, followSymlinks); err != nil {
+		if err := findUntagged(store, tx, paths, recursive, includeHidden, followSymlinks); err != nil {
 			return err, nil
 		}
 	}
@@ -83,28 +85,28 @@ func untaggedExec(options Options, args []string, databasePath string) (error, w
 	return nil, nil
 }
 
-func findUntagged(store *storage.Storage, tx *storage.Tx, paths []string, recursive, followSymlinks bool) error {
+func findUntagged(store *storage.Storage, tx *storage.Tx, paths []string, recursive, includeHidden, followSymlinks bool) error {
 	var action = func(absPath string) {
 		relPath := _path.Rel(absPath)
 		fmt.Println(relPath)
 	}
 
-	return findUntaggedFunc(store, tx, paths, recursive, followSymlinks, action)
+	return findUntaggedFunc(store, tx, paths, recursive, includeHidden, followSymlinks, action)
 }
 
-func findUntaggedCount(store *storage.Storage, tx *storage.Tx, paths []string, recursive, followSymlinks bool) (uint, error) {
+func findUntaggedCount(store *storage.Storage, tx *storage.Tx, paths []string, recursive, includeHidden, followSymlinks bool) (uint, error) {
 	var count uint
 
 	var action = func(absPath string) {
 		count++
 	}
 
-	err := findUntaggedFunc(store, tx, paths, recursive, followSymlinks, action)
+	err := findUntaggedFunc(store, tx, paths, recursive, includeHidden, followSymlinks, action)
 
 	return count, err
 }
 
-func findUntaggedFunc(store *storage.Storage, tx *storage.Tx, paths []string, recursive, followSymlinks bool, action func(absPath string)) error {
+func findUntaggedFunc(store *storage.Storage, tx *storage.Tx, paths []string, recursive, includeHidden, followSymlinks bool, action func(absPath string)) error {
 	for _, path := range paths {
 		absPath, err := filepath.Abs(path)
 		if err != nil {
@@ -130,19 +132,19 @@ func findUntaggedFunc(store *storage.Storage, tx *storage.Tx, paths []string, re
 		}
 
 		if recursive {
-			entries, err := directoryEntries(path)
+			entries, err := directoryEntries(path, includeHidden)
 			if err != nil {
 				return err
 			}
 
-			findUntaggedFunc(store, tx, entries, true, followSymlinks, action)
+			findUntaggedFunc(store, tx, entries, true, includeHidden, followSymlinks, action)
 		}
 	}
 
 	return nil
 }
 
-func directoryEntries(path string) ([]string, error) {
+func directoryEntries(path string, includeHidden bool) ([]string, error) {
 	stat, err := os.Stat(path)
 	if err != nil {
 		switch {
@@ -174,9 +176,14 @@ func directoryEntries(path string) ([]string, error) {
 		return nil, fmt.Errorf("%v: could not read directory entries: %v", path, err)
 	}
 
-	entries := make([]string, len(names))
-	for index, name := range names {
-		entries[index] = filepath.Join(path, name)
+	entries := make([]string, 0, len(names))
+	for _, name := range names {
+		childPath := filepath.Join(path, name)
+		if name[0] == '.' && !includeHidden {
+			log.Infof(2, "%v: skipping hidden file/directory", childPath)
+			continue
+		}
+		entries = append(entries, childPath)
 	}
 
 	return entries, nil

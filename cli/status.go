@@ -49,6 +49,7 @@ Note: The 'repair' subcommand can be used to fix problems caused by files that h
 		"$ tmsu status .",
 		"$ tmsu status --directory *"},
 	Options: Options{Option{"--directory", "-d", "do not examine directory contents (non-recursive)", false, ""},
+		Option{"--include-hidden", "-H", "don't skip hidden files/directories when examining recursively", false, ""},
 		Option{"--no-dereference", "-P", "do not follow symbolic links", false, ""}},
 	Exec: statusExec,
 }
@@ -93,6 +94,7 @@ func NewReport() *StatusReport {
 
 func statusExec(options Options, args []string, databasePath string) (error, warnings) {
 	dirOnly := options.HasOption("--directory")
+	includeHidden := options.HasOption("--include-hidden")
 	followSymlinks := !options.HasOption("--no-dereference")
 
 	store, err := openDatabase(databasePath)
@@ -110,12 +112,12 @@ func statusExec(options Options, args []string, databasePath string) (error, war
 	var report *StatusReport
 
 	if len(args) == 0 {
-		report, err = statusDatabase(store, tx, dirOnly, followSymlinks)
+		report, err = statusDatabase(store, tx, dirOnly, includeHidden, followSymlinks)
 		if err != nil {
 			return err, nil
 		}
 	} else {
-		report, err = statusPaths(store, tx, args, dirOnly, followSymlinks)
+		report, err = statusPaths(store, tx, args, dirOnly, includeHidden, followSymlinks)
 		if err != nil {
 			return err, nil
 		}
@@ -126,7 +128,7 @@ func statusExec(options Options, args []string, databasePath string) (error, war
 	return nil, nil
 }
 
-func statusDatabase(store *storage.Storage, tx *storage.Tx, dirOnly, followSymlinks bool) (*StatusReport, error) {
+func statusDatabase(store *storage.Storage, tx *storage.Tx, dirOnly, includeHidden, followSymlinks bool) (*StatusReport, error) {
 	report := NewReport()
 
 	log.Info(2, "retrieving all files from database.")
@@ -152,7 +154,7 @@ func statusDatabase(store *storage.Storage, tx *storage.Tx, dirOnly, followSymli
 	}
 
 	for _, path := range topLevelPaths {
-		if err = findNewFiles(path, report, dirOnly, followSymlinks); err != nil {
+		if err = findNewFiles(path, report, dirOnly, includeHidden, followSymlinks); err != nil {
 			return nil, err
 		}
 	}
@@ -160,7 +162,7 @@ func statusDatabase(store *storage.Storage, tx *storage.Tx, dirOnly, followSymli
 	return report, nil
 }
 
-func statusPaths(store *storage.Storage, tx *storage.Tx, paths []string, dirOnly, followSymlinks bool) (*StatusReport, error) {
+func statusPaths(store *storage.Storage, tx *storage.Tx, paths []string, dirOnly, includeHidden, followSymlinks bool) (*StatusReport, error) {
 	report := NewReport()
 
 	for _, path := range paths {
@@ -215,7 +217,7 @@ func statusPaths(store *storage.Storage, tx *storage.Tx, paths []string, dirOnly
 			}
 		}
 
-		err = findNewFiles(absPath, report, dirOnly, followSymlinks)
+		err = findNewFiles(absPath, report, dirOnly, includeHidden, followSymlinks)
 		if err != nil {
 			return nil, err
 		}
@@ -268,7 +270,7 @@ func statusCheckFile(absPath string, file *entities.File, report *StatusReport) 
 	return nil
 }
 
-func findNewFiles(searchPath string, report *StatusReport, dirOnly, followSymlinks bool) error {
+func findNewFiles(searchPath string, report *StatusReport, dirOnly, includeHidden, followSymlinks bool) error {
 	log.Infof(2, "%v: finding new files.", searchPath)
 
 	absPath, err := filepath.Abs(searchPath)
@@ -308,7 +310,11 @@ func findNewFiles(searchPath string, report *StatusReport, dirOnly, followSymlin
 
 		for _, dirName := range dirNames {
 			dirPath := filepath.Join(absPath, dirName)
-			err = findNewFiles(dirPath, report, dirOnly, followSymlinks)
+			if dirName[0] == '.' && !includeHidden {
+				log.Infof(2, "%v: skipping hidden file/directory", dirPath)
+				continue
+			}
+			err = findNewFiles(dirPath, report, dirOnly, includeHidden, followSymlinks)
 			if err != nil {
 				return err
 			}
