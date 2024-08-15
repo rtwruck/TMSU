@@ -51,6 +51,7 @@ Note: The 'repair' subcommand can be used to fix problems caused by files that h
 		"$ tmsu status --directory *"},
 	Options: Options{Option{"--directory", "-d", "do not examine directory contents (non-recursive)", false, ""},
 		Option{"--fingerprint", "-f", "list file fingerprint instead of tagging status", false, ""},
+		Option{"--include-hidden", "-H", "don't skip hidden files/directories when examining recursively", false, ""},
 		Option{"--no-dereference", "-P", "do not follow symbolic links", false, ""}},
 	Exec: statusExec,
 }
@@ -96,6 +97,7 @@ func NewReport() *StatusReport {
 
 func statusExec(options Options, args []string, databasePath string) (error, warnings) {
 	dirOnly := options.HasOption("--directory")
+	includeHidden := options.HasOption("--include-hidden")
 	followSymlinks := !options.HasOption("--no-dereference")
 	showFingerprints := options.HasOption("--fingerprint")
 
@@ -119,12 +121,12 @@ func statusExec(options Options, args []string, databasePath string) (error, war
 	var report *StatusReport
 
 	if len(args) == 0 {
-		report, err = statusDatabase(store, tx, dirOnly, followSymlinks, settings.TagDirectories())
+		report, err = statusDatabase(store, tx, dirOnly, includeHidden, followSymlinks, settings.TagDirectories())
 		if err != nil {
 			return err, nil
 		}
 	} else {
-		report, err = statusPaths(store, tx, args, dirOnly, followSymlinks, settings.TagDirectories())
+		report, err = statusPaths(store, tx, args, dirOnly, includeHidden, followSymlinks, settings.TagDirectories())
 		if err != nil {
 			return err, nil
 		}
@@ -135,7 +137,7 @@ func statusExec(options Options, args []string, databasePath string) (error, war
 	return nil, nil
 }
 
-func statusDatabase(store *storage.Storage, tx *storage.Tx, dirOnly, followSymlinks, tagDirectories bool) (*StatusReport, error) {
+func statusDatabase(store *storage.Storage, tx *storage.Tx, dirOnly, includeHidden, followSymlinks, tagDirectories bool) (*StatusReport, error) {
 	report := NewReport()
 
 	log.Info(2, "retrieving all files from database.")
@@ -161,7 +163,7 @@ func statusDatabase(store *storage.Storage, tx *storage.Tx, dirOnly, followSymli
 	}
 
 	for _, path := range topLevelPaths {
-		if err = findNewFiles(path, report, dirOnly, followSymlinks, tagDirectories); err != nil {
+		if err = findNewFiles(path, report, dirOnly, includeHidden, followSymlinks, tagDirectories); err != nil {
 			return nil, err
 		}
 	}
@@ -169,7 +171,7 @@ func statusDatabase(store *storage.Storage, tx *storage.Tx, dirOnly, followSymli
 	return report, nil
 }
 
-func statusPaths(store *storage.Storage, tx *storage.Tx, paths []string, dirOnly, followSymlinks, tagDirectories bool) (*StatusReport, error) {
+func statusPaths(store *storage.Storage, tx *storage.Tx, paths []string, dirOnly, includeHidden, followSymlinks, tagDirectories bool) (*StatusReport, error) {
 	report := NewReport()
 
 	for _, path := range paths {
@@ -224,7 +226,7 @@ func statusPaths(store *storage.Storage, tx *storage.Tx, paths []string, dirOnly
 			}
 		}
 
-		err = findNewFiles(absPath, report, dirOnly, followSymlinks, tagDirectories)
+		err = findNewFiles(absPath, report, dirOnly, includeHidden, followSymlinks, tagDirectories)
 		if err != nil {
 			return nil, err
 		}
@@ -277,7 +279,7 @@ func statusCheckFile(absPath string, file *entities.File, report *StatusReport) 
 	return nil
 }
 
-func findNewFiles(searchPath string, report *StatusReport, dirOnly, followSymlinks, tagDirectories bool) error {
+func findNewFiles(searchPath string, report *StatusReport, dirOnly, includeHidden, followSymlinks, tagDirectories bool) error {
 	log.Infof(2, "%v: finding new files.", searchPath)
 
 	absPath, err := filepath.Abs(searchPath)
@@ -320,7 +322,11 @@ func findNewFiles(searchPath string, report *StatusReport, dirOnly, followSymlin
 
 		for _, dirName := range dirNames {
 			dirPath := filepath.Join(absPath, dirName)
-			err = findNewFiles(dirPath, report, dirOnly, followSymlinks, tagDirectories)
+			if dirName[0] == '.' && !includeHidden {
+				log.Infof(2, "%v: skipping hidden file/directory", dirPath)
+				continue
+			}
+			err = findNewFiles(dirPath, report, dirOnly, includeHidden, followSymlinks, tagDirectories)
 			if err != nil {
 				return err
 			}
