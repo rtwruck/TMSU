@@ -243,6 +243,14 @@ CREATE TABLE IF NOT EXISTS implication (
 		return err
 	}
 
+	sql = `
+CREATE INDEX IF NOT EXISTS idx_implication_implied_tag_id
+ON implication(implied_tag_id, implied_value_id)`
+
+	if _, err := tx.Exec(sql); err != nil {
+		return err
+	}
+
 	return nil
 }
 
