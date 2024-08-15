@@ -65,6 +65,10 @@ type ValueExpression struct {
 	Name string
 }
 
+type AllValuesExpression struct {
+	Name string
+}
+
 // unexported
 
 func (parser Parser) expression() (Expression, error) {

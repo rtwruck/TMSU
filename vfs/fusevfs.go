@@ -835,49 +835,35 @@ func (vfs FuseVfs) openTaggedEntryDir(tx *storage.Tx, path []string) ([]fuse.Dir
 		return vfs.openTaggedEntryFilesDir(tx, path[:len(path)-1])
 	}
 
-	expression := pathToExpression(path)
-	files, err := vfs.store.FilesForQuery(tx, expression, "", false, false, "name")
-	if err != nil {
-		log.Fatalf("could not query files: %v", err)
-	}
-
+	var furtherTagNames []string
 	var valueNames []string
-	if lastPathElement[0] != '=' {
-		expression := pathToExpression(path[:len(path)-1])
-		files, err := vfs.store.FilesForQuery(tx, expression, "", false, false, "name")
+	if lastPathElement[0] == '=' {
+		// perform an exact query
+		expression := pathToExpression(path)
+		tagValuePairs, err := vfs.store.FileTagsForQuery(tx, expression)
 		if err != nil {
-			log.Fatalf("could not query files: %v", err)
+			log.Fatalf("could not query file tags: %v", err)
 		}
-
-		tagName := unescape(lastPathElement)
-
-		valueNames, err = vfs.tagValueNamesForFiles(tx, tagName, files)
-		if err != nil {
-			log.Fatalf("could not retrieve values for '%v': %v", tagName, err)
-		}
-	} else {
+		furtherTagNames = tagNamesExceptPathTags(tagValuePairs, path)
 		valueNames = []string{}
+	} else {
+		// include all possible values for the last tag
+		expression := pathToExpression(path[:len(path)-1])
+		tagName := unescape(lastPathElement)
+		expression = query.AndExpression{expression, query.AllValuesExpression{tagName}}
+		tagValuePairs, err := vfs.store.FileTagsForQuery(tx, expression)
+		if err != nil {
+			log.Fatalf("could not query file tags: %v", err)
+		}
+		furtherTagNames = tagNamesExceptPathTags(tagValuePairs, path)
+		valueNames = valueNamesForTag(tagValuePairs, tagName)
 	}
 
-	furtherTagNames, err := vfs.tagNamesForFiles(tx, files)
-	if err != nil {
-		log.Fatalf("could not retrieve further tags: %v", err)
-	}
-
-	entries := make([]fuse.DirEntry, 0, len(files)+len(furtherTagNames))
+	entries := make([]fuse.DirEntry, 0, len(furtherTagNames)+len(valueNames))
 	for _, tagName := range furtherTagNames {
 		tagName = escape(tagName)
 
 		if tagName == filesDir {
-			continue
-		}
-
-		hasValues, err := vfs.tagHasValues(tx, tagName)
-		if err != nil {
-			log.Fatalf("could not determine whether tag has values: %v", err)
-		}
-
-		if !hasValues && containsString(path, tagName) {
 			continue
 		}
 
@@ -1014,88 +1000,6 @@ func (vfs FuseVfs) tagNamesToIds(tx *storage.Tx, tagNames []string) (entities.Ta
 	return tagIds, nil
 }
 
-func (vfs FuseVfs) tagValueNamesForFiles(tx *storage.Tx, tagName string, files entities.Files) ([]string, error) {
-	tag, err := vfs.store.TagByName(tx, tagName)
-	if err != nil {
-		log.Fatalf("could not look up tag '%v': %v", tagName, err)
-	}
-	if tag == nil {
-		return []string{}, nil
-	}
-
-	valueIds := make(entities.ValueIds, 0, 10)
-
-	predicate := func(fileTag entities.FileTag) bool {
-		return fileTag.TagId == tag.Id
-	}
-
-	for _, file := range files {
-		fileTags, err := vfs.store.FileTagsByFileId(tx, file.Id, false)
-		if err != nil {
-			return nil, fmt.Errorf("could not retrieve file-tags for file '%v': %v", file.Id, err)
-		}
-
-		for _, valueId := range fileTags.Where(predicate).ValueIds() {
-			valueIds = append(valueIds, valueId)
-		}
-	}
-
-	values, err := vfs.store.ValuesByIds(tx, valueIds.Uniq())
-	if err != nil {
-		return nil, fmt.Errorf("could not retrieve values: %v", err)
-	}
-
-	valueNames := make([]string, 0, len(values))
-	for _, value := range values {
-		valueNames = append(valueNames, value.Name)
-	}
-
-	return valueNames, nil
-}
-
-func (vfs FuseVfs) tagNamesForFiles(tx *storage.Tx, files entities.Files) ([]string, error) {
-	tagNames := make([]string, 0, 10)
-
-	for _, file := range files {
-		fileTags, err := vfs.store.FileTagsByFileId(tx, file.Id, false)
-		if err != nil {
-			return nil, fmt.Errorf("could not retrieve file-tags for file '%v': %v", file.Id, err)
-		}
-
-		tagIds := make(entities.TagIds, len(fileTags))
-		for index, fileTag := range fileTags {
-			tagIds[index] = fileTag.TagId
-		}
-
-		tags, err := vfs.store.TagsByIds(tx, tagIds)
-		if err != nil {
-			return nil, fmt.Errorf("could not retrieve tags: %v", err)
-		}
-
-		for _, tag := range tags {
-			if !containsString(tagNames, tag.Name) {
-				tagNames = append(tagNames, tag.Name)
-			}
-		}
-	}
-
-	return tagNames, nil
-}
-
-func (vfs FuseVfs) tagHasValues(tx *storage.Tx, tagName string) (bool, error) {
-	tag, err := vfs.store.TagByName(tx, tagName)
-	if err != nil {
-		return false, err
-	}
-
-	values, err := vfs.store.ValuesByTag(tx, tag.Id)
-	if err != nil {
-		return false, err
-	}
-
-	return len(values) > 0, nil
-}
-
 func pathToExpression(path []string) query.Expression {
 	var expression query.Expression = query.EmptyExpression{}
 
@@ -1120,6 +1024,34 @@ func pathToExpression(path []string) query.Expression {
 	}
 
 	return expression
+}
+
+func valueNamesForTag(tagValuePairs entities.TagValuePairs, tagName string) []string {
+	valueNames := make([]string, 0, 10)
+
+	for _, pair := range tagValuePairs {
+		if pair.Tag.Name == tagName && pair.Value.Id != 0 {
+			valueNames = append(valueNames, pair.Value.Name)
+		}
+	}
+
+	return valueNames
+}
+
+func tagNamesExceptPathTags(tagValuePairs entities.TagValuePairs, path []string) []string {
+	tagNames := make([]string, 0, len(tagValuePairs))
+	
+	for _, pair := range tagValuePairs {
+		tagName := pair.Tag.Name
+		if containsString(tagNames, tagName) {
+			continue
+		}
+		if pair.Value.Id != 0 || !containsString(path, tagName) {
+			tagNames = append(tagNames, tagName)
+		}
+	}
+	
+	return tagNames
 }
 
 func fileIdToAscii(fileId entities.FileId) string {

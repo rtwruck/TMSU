@@ -17,6 +17,7 @@ package storage
 
 import (
 	"github.com/oniony/TMSU/entities"
+	"github.com/oniony/TMSU/query"
 	"github.com/oniony/TMSU/storage/database"
 )
 
@@ -120,6 +121,12 @@ func (storage *Storage) FileTagsByFileId(tx *Tx, fileId entities.FileId, explici
 	}
 
 	return fileTags, nil
+}
+
+// Retrieves the set of file tags that match the specified query.
+func (store *Storage) FileTagsForQuery(tx *Tx, expression query.Expression) (entities.TagValuePairs, error) {
+	pairs, err := database.FileTagsForQuery(tx.tx, expression)
+	return pairs, err
 }
 
 // Adds a file tag.

@@ -18,6 +18,8 @@ package database
 import (
 	"database/sql"
 	"github.com/oniony/TMSU/entities"
+	"github.com/oniony/TMSU/query"
+	"strconv"
 )
 
 // Determines whether the specified file has the specified tag applied.
@@ -171,6 +173,19 @@ WHERE file_id = ?1`
 	return readFileTags(rows, make(entities.FileTags, 0, 10))
 }
 
+// Retrieves the set of file tags matching the specified query.
+func FileTagsForQuery(tx *Tx, expression query.Expression) (entities.TagValuePairs, error) {
+	builder := buildFileTagsQuery(expression)
+
+	rows, err := tx.Query(builder.Sql(), builder.Params()...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return readTagValuePairs(rows, make(entities.TagValuePairs, 0, 10))
+}
+
 // Adds a file tag.
 func AddFileTag(tx *Tx, fileId entities.FileId, tagId entities.TagId, valueId entities.ValueId) (*entities.FileTag, error) {
 	sql := `
@@ -288,4 +303,151 @@ func readFileTags(rows *sql.Rows, fileTags entities.FileTags) (entities.FileTags
 	}
 
 	return fileTags, nil
+}
+
+func readTagValuePairs(rows *sql.Rows, pairs entities.TagValuePairs) (entities.TagValuePairs, error) {
+	for rows.Next() {
+		if rows.Err() != nil {
+			return nil, rows.Err()
+		}
+
+		var tagId entities.TagId
+		var tagName string
+		var valueId entities.ValueId
+		var valueName string
+		err := rows.Scan(&tagId, &tagName, &valueId, &valueName)
+		if err != nil {
+			return nil, err
+		}
+
+		pairs = append(pairs, &entities.TagValuePair{entities.Tag{tagId, tagName}, entities.Value{valueId, valueName}})
+	}
+
+	return pairs, nil
+}
+
+func buildFileTagsQuery(expression query.Expression) *SqlBuilder {
+	builder := NewBuilder()
+
+	builder.AppendSql(`
+SELECT DISTINCT file_tag.tag_id, tag.name, file_tag.value_id, COALESCE(value.name, '')
+FROM file_tag
+INNER JOIN tag ON file_tag.tag_id = tag.id
+LEFT OUTER JOIN value ON file_tag.value_id = value.id
+WHERE`)
+	buildFileTagsQueryBranch(expression, builder)
+	builder.AppendSql("ORDER BY tag.name, value.name")
+
+	return builder
+}
+
+func buildFileTagsQueryBranch(expression query.Expression, builder *SqlBuilder) {
+	switch exp := expression.(type) {
+	case query.TagExpression:
+		buildFileTagQueryBranch(exp, builder)
+	case query.ComparisonExpression:
+		buildFileTagComparisonQueryBranch(exp, builder)
+	case query.AllValuesExpression:
+		buildFileTagAllValuesQueryBranch(exp, builder)
+	case query.AndExpression:
+		buildFileTagAndQueryBranch(exp, builder)
+	case query.EmptyExpression:
+		builder.AppendSql("1 == 1")
+	default:
+		panic("Unsupported expression type.")
+	}
+}
+
+func buildFileTagQueryBranch(expression query.TagExpression, builder *SqlBuilder) {
+	builder.AppendSql(`
+file_id IN (SELECT file_id
+       FROM file_tag
+       INNER JOIN (WITH RECURSIVE working (tag_id, value_id) AS
+                   (
+                       SELECT id, 0
+                       FROM tag
+                       WHERE name = `)
+	builder.AppendParam(expression.Name)
+	builder.AppendSql(`
+                       UNION ALL
+                       SELECT b.tag_id, b.value_id
+                       FROM implication b, working
+                       WHERE b.implied_tag_id = working.tag_id AND
+                             (b.implied_value_id = working.value_id OR working.value_id = 0)
+                   )
+                   SELECT tag_id, value_id
+                   FROM working
+                  ) imps
+       ON file_tag.tag_id = imps.tag_id
+       AND (file_tag.value_id = imps.value_id OR imps.value_id = 0)
+      )`)
+}
+
+func buildFileTagAllValuesQueryBranch(expression query.AllValuesExpression, builder *SqlBuilder) {
+	builder.AppendSql(`
+file_id IN (SELECT file_id
+       FROM file_tag
+       INNER JOIN (WITH RECURSIVE working (tag_id, value_id) AS
+                   (
+                       SELECT id, 0
+                       FROM tag
+                       WHERE name = `)
+	builder.AppendParam(expression.Name)
+	builder.AppendSql(`
+                       UNION ALL
+                       SELECT b.tag_id, b.value_id
+                       FROM implication b, working
+                       WHERE b.implied_tag_id = working.tag_id AND
+                             (b.implied_value_id = working.value_id OR working.value_id = 0)
+                   )
+                   SELECT tag_id, value_id
+                   FROM working
+                  ) imps
+       ON file_tag.tag_id = imps.tag_id
+      )`)
+}
+
+func buildFileTagComparisonQueryBranch(expression query.ComparisonExpression, builder *SqlBuilder) {
+	var valueTerm string
+	_, err := strconv.ParseFloat(expression.Value.Name, 64)
+	if err == nil {
+		valueTerm = "CAST(v.name AS float)"
+	} else {
+		valueTerm = "v.name"
+	}
+
+	if expression.Operator == "!=" {
+		// reinterprent as otherwise it won't work for multiple values of same tag
+		expression.Operator = "=="
+		builder.AppendSql(" not ")
+	}
+
+	builder.AppendSql(`
+file_id IN (WITH RECURSIVE impft (tag_id, value_id) AS
+       (
+           SELECT t.id, v.id
+           FROM tag t, value v
+           WHERE t.name = `)
+	builder.AppendParam(expression.Tag.Name)
+	builder.AppendSql("AND " + valueTerm + " " + expression.Operator + " ")
+	builder.AppendParam(expression.Value.Name)
+	builder.AppendSql(`
+           UNION ALL
+           SELECT b.tag_id, b.value_id
+           FROM implication b, impft
+           WHERE b.implied_tag_id = impft.tag_id AND
+                 (b.implied_value_id = impft.value_id OR impft.value_id = 0)
+       )
+       SELECT file_id
+       FROM file_tag
+       INNER JOIN impft
+       ON file_tag.tag_id = impft.tag_id AND
+          file_tag.value_id = impft.value_id
+      )`)
+}
+
+func buildFileTagAndQueryBranch(expression query.AndExpression, builder *SqlBuilder) {
+	buildFileTagsQueryBranch(expression.LeftOperand, builder)
+	builder.AppendSql("AND")
+	buildFileTagsQueryBranch(expression.RightOperand, builder)
 }
