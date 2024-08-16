@@ -45,7 +45,8 @@ fi
 
 diff /tmp/tmsu/stdout - <<EOF
 /tmp/tmsu/vfs
-/tmp/tmsu/vfs/.database
+/tmp/tmsu/vfs/.tmsu
+/tmp/tmsu/vfs/.tmsu/db
 /tmp/tmsu/vfs/tags
 /tmp/tmsu/vfs/tags/A
 /tmp/tmsu/vfs/tags/A/files
