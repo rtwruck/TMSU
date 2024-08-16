@@ -89,7 +89,24 @@ func UnescapeOctal(path string) string {
 }
 
 func Dereference(path string) (string, error) {
-	return filepath.EvalSymlinks(path)
+	stat, err := os.Lstat(path)
+	if err != nil {
+		return "", err
+	}
+	if stat.Mode()&os.ModeSymlink != 0 {
+		linkPath, err := os.Readlink(path)
+		if err != nil {
+			return "", err
+		}
+
+		if filepath.IsAbs(linkPath) {
+			return Dereference(linkPath)
+		} else {
+			return Dereference(filepath.Join(filepath.Dir(path), linkPath))
+		}
+	}
+
+	return path, nil
 }
 
 // unexported
