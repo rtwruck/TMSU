@@ -18,6 +18,7 @@ package storage
 import (
 	"fmt"
 	"github.com/oniony/TMSU/common/log"
+	_path "github.com/oniony/TMSU/common/path"
 	"github.com/oniony/TMSU/storage/database"
 	"path/filepath"
 )
@@ -87,7 +88,7 @@ func (tx *Tx) Rollback() error {
 // unexported
 
 func determineRootPath(dbPath string) (string, error) {
-	absDbPath, err := filepath.Abs(dbPath)
+	absDbPath, err := _path.Dereference(dbPath)
 	if err != nil {
 		return "", AbsolutePathResolutionError{dbPath, err}
 	}

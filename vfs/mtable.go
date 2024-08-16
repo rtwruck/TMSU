@@ -55,7 +55,7 @@ func GetMountTable() ([]Mount, error) {
 
 		mountpoint := path.UnescapeOctal(parts[1])
 
-		databaseSymlink := filepath.Join(mountpoint, ".database")
+		databaseSymlink := filepath.Join(mountpoint, databaseDir, databaseFilename)
 		databasePath, err := os.Readlink(databaseSymlink)
 		if err != nil {
 			return nil, err
