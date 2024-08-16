@@ -27,10 +27,11 @@ var ImplyCommand = Command{
 	Name:     "imply",
 	Synopsis: "Creates a tag implication",
 	Usages: []string{"tmsu imply [OPTION] TAG[=VALUE] IMPL[=VALUE]...",
+		"tmsu imply TAG[=VALUE]",
 		"tmsu imply"},
 	Description: `Creates a tag implication such that any file tagged TAG will be implicitly tagged IMPL.
 
-When run without arguments lists the set of tag implications.
+When run without arguments or with a single tag lists the set of tag implications.
 
 Tag implications are applied at time of file query (not at time of tag application) therefore any changes to the implication rules will affect all further queries.
 
@@ -76,20 +77,29 @@ func implyExec(options Options, args []string, databasePath string) (error, warn
 
 	switch len(args) {
 	case 0:
-		return listImplications(store, tx, colour), nil
+		return listImplications(store, tx, "", colour), nil
 	case 1:
-		return fmt.Errorf("tag(s) to be implied must be specified"), nil
+		return listImplications(store, tx, args[0], colour), nil
 	default:
 		return addImplications(store, tx, args)
 	}
 }
 
-func listImplications(store *storage.Storage, tx *storage.Tx, colour bool) error {
+func listImplications(store *storage.Storage, tx *storage.Tx, filterByTag string, colour bool) error {
 	log.Infof(2, "retrieving tag implications.")
 
 	implications, err := store.Implications(tx)
 	if err != nil {
 		return fmt.Errorf("could not retrieve implications: %v", err)
+	}
+
+	if filterByTag != "" {
+		tagName, valueName := parseTagEqValueName(filterByTag)
+		predicate := func(impl entities.Implication) bool {
+			return impl.ImplyingTag.Name == tagName && impl.ImplyingValue.Name == valueName ||
+				impl.ImpliedTag.Name == tagName && impl.ImpliedValue.Name == valueName
+		}
+		implications = implications.Where(predicate)
 	}
 
 	width := 0
